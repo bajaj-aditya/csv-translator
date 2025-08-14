@@ -1,0 +1,31 @@
+{
+  "version": 3,
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "edge": false,
+  "env": {
+    "AZURE_TRANSLATOR_KEY": "@azure_translator_key",
+    "AZURE_TRANSLATOR_REGION": "@azure_translator_region",
+    "AZURE_TRANSLATOR_ENDPOINT": "@azure_translator_endpoint"
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "git": {
+    "autoExposeSystemEnvs": false
+  }
+}
+

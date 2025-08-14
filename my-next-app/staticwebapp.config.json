@@ -1,0 +1,15 @@
+# Azure Static Web Apps Configuration
+
+{
+  "$schema": "https://aka.ms/azure/static-web-apps-cli/schema",
+  "configurations": {
+    "app": {
+      "language": "node",
+      "appLocation": "/",
+      "apiLocation": "api",
+      "outputLocation": ".next",
+      "appBuildCommand": "npm run build",
+      "apiBuildCommand": "npm run build-api"
+    }
+  }
+}
