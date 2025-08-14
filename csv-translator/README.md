@@ -38,6 +38,20 @@ src/
 - ✅ Constants management
 - ✅ Utility functions (cn helper)
 
+## Prerequisites
+
+This project requires **Node.js 20+**. Install via
+
+```bash
+# with nvm
+nvm install 20
+nvm use 20
+
+# or asdf
+asdf install nodejs 20
+asdf local nodejs 20
+```
+
 ## Getting Started
 
 1. **Install dependencies**:
