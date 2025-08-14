@@ -16,28 +16,29 @@ export const API_ENDPOINTS = {
   LANGUAGES: '/api/languages',
 } as const;
 
-// CSV Translator Constants
+// CSV Translator Constants - English and Indian Languages Focus
+// Only includes languages supported by Azure Translator API
 export const SUPPORTED_LANGUAGES = [
+  // English (Primary)
   { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'es', name: 'Spanish', nativeName: 'Español' },
-  { code: 'fr', name: 'French', nativeName: 'Français' },
-  { code: 'de', name: 'German', nativeName: 'Deutsch' },
-  { code: 'it', name: 'Italian', nativeName: 'Italiano' },
-  { code: 'pt', name: 'Portuguese', nativeName: 'Português' },
-  { code: 'ru', name: 'Russian', nativeName: 'Русский' },
-  { code: 'ja', name: 'Japanese', nativeName: '日本語' },
-  { code: 'ko', name: 'Korean', nativeName: '한국어' },
-  { code: 'zh', name: 'Chinese (Simplified)', nativeName: '中文 (简体)' },
-  { code: 'zh-Hant', name: 'Chinese (Traditional)', nativeName: '中文 (繁體)' },
-  { code: 'ar', name: 'Arabic', nativeName: 'العربية' },
+  
+  // Major Indian Languages (Azure Translator Supported)
   { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी' },
-  { code: 'th', name: 'Thai', nativeName: 'ไทย' },
-  { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt' },
-  { code: 'nl', name: 'Dutch', nativeName: 'Nederlands' },
-  { code: 'sv', name: 'Swedish', nativeName: 'Svenska' },
-  { code: 'da', name: 'Danish', nativeName: 'Dansk' },
-  { code: 'no', name: 'Norwegian', nativeName: 'Norsk' },
-  { code: 'fi', name: 'Finnish', nativeName: 'Suomi' },
+  { code: 'bn', name: 'Bengali', nativeName: 'বাংলা' },
+  { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
+  { code: 'mr', name: 'Marathi', nativeName: 'मराठी' },
+  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
+  { code: 'ur', name: 'Urdu', nativeName: 'اردو' },
+  { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી' },
+  { code: 'ml', name: 'Malayalam', nativeName: 'മലയാളം' },
+  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ' },
+  { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ' },
+  { code: 'as', name: 'Assamese', nativeName: 'অসমীয়া' },
+  { code: 'ne', name: 'Nepali', nativeName: 'नेपाली' },
+  { code: 'si', name: 'Sinhala', nativeName: 'සිංහල' },
+  
+  // Additional South Asian Languages
+  { code: 'my', name: 'Myanmar (Burmese)', nativeName: 'မြန်မာ' },
 ] as const;
 
 export const CSV_CONFIG = {

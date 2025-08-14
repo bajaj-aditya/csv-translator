@@ -23,6 +23,12 @@ export default function ComponentShowcase() {
   const [targetLanguage, setTargetLanguage] = React.useState<string>("")
   const [targetLanguages, setTargetLanguages] = React.useState<string[]>([])
   const [columnMappings, setColumnMappings] = React.useState<ColumnMapping[]>([])
+  const [now, setNow] = React.useState<Date | null>(null)
+
+  // Initialize date on client side to prevent hydration mismatch
+  React.useEffect(() => {
+    setNow(new Date(Date.now() - 5 * 60 * 1000))
+  }, [])
 
   // Sample data
   const sampleColumns = ["Name", "Email", "Description", "Category", "Status"]
@@ -44,7 +50,7 @@ export default function ComponentShowcase() {
     progress: 65,
     totalRows: 1000,
     processedRows: 650,
-    createdAt: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
+    createdAt: now || new Date("—"), // Use placeholder until client-side date is available
   }
 
   const handleFileSelect = (file: File) => {

@@ -32,9 +32,19 @@ interface TranslationStatsProps {
 }
 
 function TranslationStats({ job, className }: TranslationStatsProps) {
-  const formatDuration = (start: Date, end?: Date) => {
-    const endTime = end || new Date()
-    const duration = endTime.getTime() - start.getTime()
+  // Client-side state for time calculations
+  const [currentTime, setCurrentTime] = React.useState<Date | null>(null)
+  const [formattedDuration, setFormattedDuration] = React.useState<string>('--')
+  const [formattedProcessedRows, setFormattedProcessedRows] = React.useState<string>('--')
+  const [formattedTotalRows, setFormattedTotalRows] = React.useState<string>('--')
+  const [rowsPerSecond, setRowsPerSecond] = React.useState<number>(0)
+  const [estimatedTimeRemaining, setEstimatedTimeRemaining] = React.useState<string | null>(null)
+  const [formattedCompletedAt, setFormattedCompletedAt] = React.useState<string>('--')
+
+  // Format duration helper
+  const formatDuration = React.useCallback((start: Date, end?: Date) => {
+    if (!end) return '--'
+    const duration = end.getTime() - start.getTime()
     const seconds = Math.floor(duration / 1000)
     const minutes = Math.floor(seconds / 60)
     const hours = Math.floor(minutes / 60)
@@ -46,12 +56,13 @@ function TranslationStats({ job, className }: TranslationStatsProps) {
     } else {
       return `${seconds}s`
     }
-  }
+  }, [])
 
-  const getEstimatedTimeRemaining = () => {
+  // Calculate estimated time remaining helper
+  const calculateEstimatedTimeRemaining = React.useCallback((currentTime: Date) => {
     if (job.status !== 'processing' || job.processedRows === 0) return null
     
-    const elapsed = new Date().getTime() - job.createdAt.getTime()
+    const elapsed = currentTime.getTime() - job.createdAt.getTime()
     const rate = job.processedRows / elapsed // rows per ms
     const remainingRows = job.totalRows - job.processedRows
     const estimatedMs = remainingRows / rate
@@ -64,27 +75,71 @@ function TranslationStats({ job, className }: TranslationStatsProps) {
     } else {
       return `${estimatedSeconds}s remaining`
     }
-  }
+  }, [job.status, job.processedRows, job.createdAt, job.totalRows])
 
-  const rowsPerSecond = React.useMemo(() => {
+  // Calculate rows per second helper
+  const calculateRowsPerSecond = React.useCallback((currentTime: Date) => {
     if (job.status !== 'processing' || job.processedRows === 0) return 0
-    const elapsed = (new Date().getTime() - job.createdAt.getTime()) / 1000
+    const elapsed = (currentTime.getTime() - job.createdAt.getTime()) / 1000
     return Math.round(job.processedRows / elapsed * 10) / 10
   }, [job.status, job.processedRows, job.createdAt])
+
+  // Single useEffect to compute all time-related values on client mount
+  React.useEffect(() => {
+    const now = new Date()
+    setCurrentTime(now)
+    
+    // Format number strings
+    setFormattedProcessedRows(job.processedRows.toLocaleString())
+    setFormattedTotalRows(job.totalRows.toLocaleString())
+    
+    // Format completion time if available
+    if (job.completedAt) {
+      setFormattedCompletedAt(job.completedAt.toLocaleString())
+      // Use actual completion time for duration
+      setFormattedDuration(formatDuration(job.createdAt, job.completedAt))
+    } else {
+      setFormattedCompletedAt('Unknown')
+      // Use current time for ongoing jobs
+      setFormattedDuration(formatDuration(job.createdAt, now))
+    }
+    
+    // Calculate processing stats
+    setRowsPerSecond(calculateRowsPerSecond(now))
+    setEstimatedTimeRemaining(calculateEstimatedTimeRemaining(now))
+    
+    // Set up interval for live updates during processing
+    let interval: NodeJS.Timeout | null = null
+    if (job.status === 'processing') {
+      interval = setInterval(() => {
+        const currentTime = new Date()
+        setCurrentTime(currentTime)
+        setFormattedDuration(formatDuration(job.createdAt, currentTime))
+        setRowsPerSecond(calculateRowsPerSecond(currentTime))
+        setEstimatedTimeRemaining(calculateEstimatedTimeRemaining(currentTime))
+      }, 1000)
+    }
+    
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [job.createdAt, job.completedAt, job.processedRows, job.totalRows, job.status, formatDuration, calculateRowsPerSecond, calculateEstimatedTimeRemaining])
 
   return (
     <div className={cn("grid grid-cols-2 md:grid-cols-4 gap-4 text-sm", className)}>
       <div className="text-center">
         <p className="text-muted-foreground">Processed</p>
         <p className="font-medium">
-          {job.processedRows.toLocaleString()} / {job.totalRows.toLocaleString()}
+          {formattedProcessedRows} / {formattedTotalRows}
         </p>
       </div>
       
       <div className="text-center">
         <p className="text-muted-foreground">Duration</p>
         <p className="font-medium">
-          {formatDuration(job.createdAt, job.completedAt)}
+          {formattedDuration}
         </p>
       </div>
 
@@ -97,7 +152,7 @@ function TranslationStats({ job, className }: TranslationStatsProps) {
           
           <div className="text-center">
             <p className="text-muted-foreground">ETA</p>
-            <p className="font-medium">{getEstimatedTimeRemaining() || 'Calculating...'}</p>
+            <p className="font-medium">{estimatedTimeRemaining || 'Calculating...'}</p>
           </div>
         </>
       )}
@@ -106,7 +161,7 @@ function TranslationStats({ job, className }: TranslationStatsProps) {
         <div className="text-center md:col-span-2">
           <p className="text-muted-foreground">Completed At</p>
           <p className="font-medium">
-            {job.completedAt?.toLocaleString() || 'Unknown'}
+            {formattedCompletedAt}
           </p>
         </div>
       )}
