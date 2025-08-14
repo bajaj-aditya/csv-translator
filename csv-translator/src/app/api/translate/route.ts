@@ -25,8 +25,8 @@ async function translateText(
   if (!text || text.trim() === '') return text;
   
   try {
-    // Add small delay to prevent rate limiting
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Add delay to prevent rate limiting (increased for large files)
+    await new Promise(resolve => setTimeout(resolve, 200));
     
     const result = await azureTranslator.translateText(text, toLang, fromLang);
     return result.translatedText;

@@ -137,39 +137,95 @@ export default function TranslatorPage() {
     csvResultRef.current = ""
 
 try {
-      const res = await fetch(API_ENDPOINTS.TRANSLATE, { method: "POST", body: formData })
+      // Create AbortController for timeout management
+      const abortController = new AbortController()
+      const timeoutId = setTimeout(() => {
+        abortController.abort()
+      }, 60 * 60 * 1000) // 1 hour timeout for large files
+
+      const res = await fetch(API_ENDPOINTS.TRANSLATE, { 
+        method: "POST", 
+        body: formData,
+        signal: abortController.signal,
+        // Add keep-alive headers
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive'
+        }
+      })
+      
+      clearTimeout(timeoutId)
+      
       if (!res.ok) {
         const text = await res.text()
         throw new Error(text || `Request failed with ${res.status}`)
       }
       if (!res.body) throw new Error("No response body")
+      
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
-
+      let lastActivityTime = Date.now()
+      
+      // Activity timeout checker
+      const activityTimeout = 5 * 60 * 1000 // 5 minutes without activity
+      
       while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const chunks = buffer.split("\n\n")
-        buffer = chunks.pop() || ""
-        for (const raw of chunks) {
-          if (!raw.startsWith("data:")) continue
-          const json = raw.replace(/^data:\s*/, "").trim()
-          if (!json) continue
-          let msg: SSEMessage
-          try {
-            msg = JSON.parse(json)
-          } catch (e) {
-            console.error("JSON parse error", e)
-            continue
+        try {
+          const { value, done } = await reader.read()
+          
+          if (done) {
+            clearTimeout(timeoutId)
+            break
           }
-          handleSseMessage(msg)
+          
+          // Reset activity timer
+          lastActivityTime = Date.now()
+          
+          buffer += decoder.decode(value, { stream: true })
+          const chunks = buffer.split("\n\n")
+          buffer = chunks.pop() || ""
+          
+          for (const raw of chunks) {
+            if (!raw.startsWith("data:")) continue
+            const json = raw.replace(/^data:\s*/, "").trim()
+            if (!json) continue
+            
+            let msg: SSEMessage
+            try {
+              msg = JSON.parse(json)
+            } catch (e) {
+              console.error("JSON parse error", e)
+              continue
+            }
+            handleSseMessage(msg)
+          }
+          
+          // Check for activity timeout
+          if (Date.now() - lastActivityTime > activityTimeout) {
+            throw new Error("Connection timed out due to inactivity")
+          }
+          
+        } catch (readError) {
+          if (readError instanceof Error && readError.name === 'AbortError') {
+            throw new Error("Translation timed out. Please try with a smaller file or reduce batch size.")
+          }
+          throw readError
         }
       }
     } catch (err) {
       console.error(err)
-      setProgressMessage((err as Error).message)
+      if (err instanceof Error) {
+        if (err.name === 'AbortError' || err.message.includes('aborted')) {
+          setProgressMessage("Translation timed out. Please try with a smaller file or contact support.")
+        } else if (err.message.includes('network') || err.message.includes('fetch')) {
+          setProgressMessage("Network error occurred. Please check your connection and try again.")
+        } else {
+          setProgressMessage(err.message)
+        }
+      } else {
+        setProgressMessage("An unexpected error occurred during translation.")
+      }
       setIsTranslating(false)
     }
   }
@@ -237,6 +293,19 @@ try {
 
       {selectedFile && (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          {/* Large file warning */}
+          {selectedFile && selectedFile.size > 10 * 1024 * 1024 && (
+            <div className="p-4 border border-orange-200 bg-orange-50 rounded-md">
+              <h3 className="font-medium text-orange-800 mb-2">⚠️ Large File Detected</h3>
+              <p className="text-sm text-orange-700 mb-2">
+                Your file is {Math.round(selectedFile.size / 1024 / 1024)}MB. Large files may take 20-60 minutes to process.
+              </p>
+              <p className="text-sm text-orange-700">
+                💡 <strong>Tip:</strong> For files with 10,000+ rows, consider using a smaller batch size (10-25) to prevent network timeouts.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <SourceLanguageSelect
               value={watch("sourceLanguage")}
@@ -260,6 +329,9 @@ try {
                 disabled={isTranslating}
                 {...register("batchSize")}
               />
+              <p className="text-xs text-muted-foreground">
+                Smaller batches = better progress tracking, less network errors
+              </p>
               {errors.batchSize && <p className="text-xs text-destructive">{errors.batchSize.message}</p>}
             </div>
           </div>
