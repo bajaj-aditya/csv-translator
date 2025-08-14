@@ -139,11 +139,16 @@ async function processTranslationRequest(
     let headers: string[] = [];
     let totalRows = 0;
 
-// Large file warning
-    if (csvFile.size > 10 * 1024 * 1024) {
+    // Large file warnings and estimates
+    if (csvFile.size > 50 * 1024 * 1024) {
       sendEvent({
         type: 'progress',
-        message: 'Large file detected, processing might take a while…',
+        message: 'Very large file detected! This may take 30+ minutes to process...',
+      });
+    } else if (csvFile.size > 10 * 1024 * 1024) {
+      sendEvent({
+        type: 'progress',
+        message: 'Large file detected, processing might take 10-20 minutes…',
       });
     }
 
@@ -268,17 +273,6 @@ async function processTranslationRequest(
         processedRows,
         currentBatch,
         totalBatches,
-      });
-
-      // Send intermediate CSV data for this batch
-      const csvChunk = stringify([...translatedBatch], {
-        header: false,
-      });
-
-      sendEvent({
-        type: 'data',
-        data: csvChunk,
-        message: `Batch ${currentBatch} data`,
       });
     }
 
