@@ -53,7 +53,7 @@ export const CSV_CONFIG = {
 
 export const TRANSLATION_LIMITS = {
   AZURE_MAX_TEXT_LENGTH: 50000, // Azure Translator character limit
-  MAX_CONCURRENT_REQUESTS: 20,
+  MAX_CONCURRENT_REQUESTS: 3, // Reduced to avoid rate limits
   REQUEST_TIMEOUT: 30000, // 30 seconds
   RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000, // 1 second

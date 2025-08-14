@@ -4,6 +4,7 @@ import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify/sync';
 import pLimit from 'p-limit';
 import { ColumnMapping, CSVTranslationConfig } from '../../../types';
+import { AzureTranslator } from '../../../lib/azure';
 
 // ------------------ Simple in-memory rate limit ----------------------
 const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
@@ -12,19 +13,28 @@ const rateLimitMap = new Map<string, { count: number; firstRequestTs: number }>(
 //---------------------------------------------------------------------
 import { CSV_CONFIG, TRANSLATION_LIMITS } from '../../../constants';
 
-// Mock translation service - replace with actual translation service
+// Initialize Azure Translator
+const azureTranslator = new AzureTranslator();
+
+// Real translation service using Azure Translator API
 async function translateText(
   text: string,
   fromLang: string,
   toLang: string
 ): Promise<string> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 200));
-  
-  // For demo purposes, just add a prefix to show translation
-  // In production, this would call Azure Translator, Google Translate, etc.
   if (!text || text.trim() === '') return text;
-  return `[${toLang.toUpperCase()}] ${text}`;
+  
+  try {
+    // Add small delay to prevent rate limiting
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    const result = await azureTranslator.translateText(text, toLang, fromLang);
+    return result.translatedText;
+  } catch (error) {
+    console.error('Translation error:', error);
+    // Fallback to original text if translation fails
+    return text;
+  }
 }
 
 interface TranslationProgress {
