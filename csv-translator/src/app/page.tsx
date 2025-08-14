@@ -1,7 +1,7 @@
 "use client"
 
 // CSV Translator Page implementing full client-side workflow
-import React, { useCallback, useEffect, useRef, useState } from "react"
+import React, { useCallback, useRef, useState } from "react"
 import Papa from "papaparse"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -28,7 +28,7 @@ const translationFormSchema = z.object({
   targetLanguage: z.string().min(1, "Select target language"),
   batchSize: z
     .preprocess((v) => Number(v), z.number().min(1).max(CSV_CONFIG.MAX_BATCH_SIZE))
-    .default(String(CSV_CONFIG.DEFAULT_BATCH_SIZE)),
+    .default(CSV_CONFIG.DEFAULT_BATCH_SIZE),
 })
 
 type TranslationFormValues = z.infer<typeof translationFormSchema>
@@ -70,7 +70,7 @@ export default function TranslatorPage() {
   } = useForm<TranslationFormValues>({
     resolver: zodResolver(translationFormSchema),
     defaultValues: {
-      batchSize: CSV_CONFIG.DEFAULT_BATCH_SIZE as unknown as any,
+      batchSize: CSV_CONFIG.DEFAULT_BATCH_SIZE as unknown as string,
     },
   })
 
@@ -309,13 +309,13 @@ try {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <SourceLanguageSelect
               value={watch("sourceLanguage")}
-              onValueChange={(v) => setValue("sourceLanguage", v as any)}
+              onValueChange={(v) => setValue("sourceLanguage", v)}
               disabled={isTranslating}
               className={cn(errors.sourceLanguage && "border-destructive")}
             />
             <TargetLanguageSelect
               value={watch("targetLanguage")}
-              onValueChange={(v) => setValue("targetLanguage", v as any)}
+              onValueChange={(v) => setValue("targetLanguage", v)}
               disabled={isTranslating}
               className={cn(errors.targetLanguage && "border-destructive")}
             />

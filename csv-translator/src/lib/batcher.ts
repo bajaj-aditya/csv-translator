@@ -448,10 +448,10 @@ export function batchCSVRows(
  * Batch JSON objects with size limits
  */
 export function batchJSONObjects(
-  objects: Record<string, any>[],
+  objects: Record<string, unknown>[],
   options: BatcherOptions = {}
-): BatchResult<Record<string, any>>[] {
-  const batcher = new TextBatcher<Record<string, any>>(options);
+): BatchResult<Record<string, unknown>>[] {
+  const batcher = new TextBatcher<Record<string, unknown>>(options);
   return batcher.batchItems(objects);
 }
 

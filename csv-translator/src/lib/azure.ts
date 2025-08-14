@@ -150,7 +150,7 @@ export class AzureTranslator {
    * Parse Azure API error response
    */
   private async parseErrorResponse(response: Response): Promise<never> {
-    let errorDetails: any;
+    let errorDetails: { error?: { message?: string; code?: string }; message?: string };
     
     try {
       const contentType = response.headers.get('content-type');
