@@ -101,11 +101,11 @@ export class AzureTranslator {
       apiKey: env.AZURE_TRANSLATOR_KEY,
       region: env.AZURE_TRANSLATOR_REGION,
       endpoint: env.AZURE_TRANSLATOR_ENDPOINT,
-      maxRetries: 3,
-      initialRetryDelay: 1000, // 1 second
-      maxRetryDelay: 30000, // 30 seconds
+      maxRetries: 5, // More retries for better reliability
+      initialRetryDelay: 2000, // 2 seconds
+      maxRetryDelay: 60000, // 1 minute max
       batchCharacterLimit: 50000, // Azure's character limit per request
-      requestTimeout: 30000, // 30 seconds
+      requestTimeout: 45000, // 45 seconds
       ...config,
     };
 

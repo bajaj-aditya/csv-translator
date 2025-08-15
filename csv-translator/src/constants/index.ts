@@ -44,17 +44,17 @@ export const SUPPORTED_LANGUAGES = [
 export const CSV_CONFIG = {
   MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB - Increased for large files
   SUPPORTED_FORMATS: ['.csv', '.txt'],
-  DEFAULT_BATCH_SIZE: 50, // Reduced for better progress tracking
-  MAX_BATCH_SIZE: 200, // Reduced to prevent memory issues
+  DEFAULT_BATCH_SIZE: 25, // Further reduced for stability
+  MAX_BATCH_SIZE: 100, // Reduced to prevent memory issues
   MIN_BATCH_SIZE: 1,
-  DEFAULT_CONCURRENCY: 2, // Conservative for large files
-  MAX_CONCURRENCY: 5, // Reduced to prevent rate limits
+  DEFAULT_CONCURRENCY: 1, // Serial processing for large files
+  MAX_CONCURRENCY: 3, // Very conservative
 } as const;
 
 export const TRANSLATION_LIMITS = {
   AZURE_MAX_TEXT_LENGTH: 50000, // Azure Translator character limit
-  MAX_CONCURRENT_REQUESTS: 2, // Further reduced for large files
-  REQUEST_TIMEOUT: 45000, // Increased timeout for large batches
-  RETRY_ATTEMPTS: 3,
-  RETRY_DELAY: 2000, // Increased delay to prevent rate limits
+  MAX_CONCURRENT_REQUESTS: 1, // Serial processing to avoid rate limits
+  REQUEST_TIMEOUT: 60000, // 1 minute timeout per request
+  RETRY_ATTEMPTS: 5, // More retries with backoff
+  RETRY_DELAY: 3000, // Longer initial delay
 } as const;

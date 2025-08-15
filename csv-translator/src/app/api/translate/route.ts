@@ -108,6 +108,144 @@ export async function POST(request: NextRequest) {
   });
 }
 
+// Enhanced batch processing with error recovery
+async function processBatchWithRecovery(
+  batch: string[][],
+  batchStartIndex: number,
+  config: CSVTranslationConfig,
+  limit: any,
+  sendEvent: (data: TranslationProgress) => void
+): Promise<string[][]> {
+  const batchPromises = batch.map((row, rowIndex) => 
+    limit(async () => {
+      const rowStartTime = Date.now();
+      const actualRowIndex = batchStartIndex + rowIndex;
+      
+      try {
+        const translatedRow: string[] = [];
+        
+        // Process each column according to mapping
+        for (let colIndex = 0; colIndex < row.length; colIndex++) {
+          const columnMapping = config.columnMappings.find(
+            (mapping) => mapping.columnIndex === colIndex
+          );
+          
+          if (columnMapping && columnMapping.shouldTranslate && columnMapping.targetLanguage) {
+            try {
+              // Add extra logging for translation attempts
+              console.log(`Translating row ${actualRowIndex}, col ${colIndex}: "${row[colIndex].substring(0, 50)}${row[colIndex].length > 50 ? '...' : '"'}`);
+              
+              // Translate the cell content with retry logic
+              const originalText = row[colIndex];
+              if (!originalText || originalText.trim() === '') {
+                translatedRow.push(originalText);
+                continue;
+              }
+              
+              const translatedText = await translateTextWithRetry(
+                originalText,
+                config.sourceLanguage,
+                columnMapping.targetLanguage,
+                3 // max retries per cell
+              );
+              translatedRow.push(translatedText);
+              
+            } catch (error) {
+              // If translation fails, keep original text
+              console.error(`Translation error for row ${actualRowIndex}, col ${colIndex}:`, error);
+              translatedRow.push(row[colIndex]);
+            }
+          } else {
+            // Keep original value if not marked for translation
+            translatedRow.push(row[colIndex]);
+          }
+        }
+        
+        const rowTime = Date.now() - rowStartTime;
+        if (rowTime > 5000) { // Log slow rows
+          console.log(`Row ${actualRowIndex} took ${rowTime}ms to process`);
+        }
+        
+        return translatedRow;
+        
+      } catch (error) {
+        console.error(`Error processing row ${actualRowIndex}:`, error);
+        // Return original row on error
+        return row;
+      }
+    })
+  );
+
+  // Wait for batch to complete with detailed error reporting
+  const translatedBatch = await Promise.allSettled(batchPromises);
+  
+  // Process results and handle failures
+  const results: string[][] = [];
+  let failedRows = 0;
+  
+  for (let i = 0; i < translatedBatch.length; i++) {
+    const result = translatedBatch[i];
+    if (result.status === 'fulfilled') {
+      results.push(result.value);
+    } else {
+      console.error(`Row ${batchStartIndex + i} failed:`, result.reason);
+      results.push(batch[i]); // Use original row
+      failedRows++;
+    }
+  }
+  
+  if (failedRows > 0) {
+    sendEvent({
+      type: 'progress',
+      message: `⚠️ ${failedRows} rows failed in this batch, using original text`,
+    });
+  }
+  
+  return results;
+}
+
+// Translation with retry logic
+async function translateTextWithRetry(
+  text: string,
+  fromLang: string,
+  toLang: string,
+  maxRetries: number = 3
+): Promise<string> {
+  if (!text || text.trim() === '') return text;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Progressive delay based on attempt number
+      const delay = 200 + (attempt - 1) * 300;
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      const result = await azureTranslator.translateText(text, toLang, fromLang);
+      return result.translatedText;
+      
+    } catch (error) {
+      console.error(`Translation attempt ${attempt}/${maxRetries} failed:`, error);
+      
+      if (attempt === maxRetries) {
+        // Final attempt failed, return original text
+        console.error(`All translation attempts failed for text: "${text.substring(0, 100)}${text.length > 100 ? '...' : '"'}`);
+        return text;
+      }
+      
+      // Wait longer between retries if it's a rate limit error
+      const isRateLimit = error instanceof Error && 
+        (error.message.includes('Rate limit') || error.message.includes('429'));
+      
+      if (isRateLimit) {
+        const rateLimitDelay = attempt * 2000; // 2s, 4s, 6s...
+        console.log(`Rate limit detected, waiting ${rateLimitDelay}ms before retry ${attempt + 1}`);
+        await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+      }
+    }
+  }
+  
+  return text; // Fallback
+}
+
 async function processTranslationRequest(
   request: NextRequest,
   sendEvent: (data: TranslationProgress) => void
@@ -208,71 +346,90 @@ async function processTranslationRequest(
     let processedRows = 0;
     let currentBatch = 0;
 
-    // Process rows in batches
+    // Process rows in batches with enhanced error handling
     const translatedRows: string[][] = [];
+    const failedBatches: number[] = [];
     
     for (let i = 0; i < totalRows; i += batchSize) {
       const batch = csvRows.slice(i, i + batchSize);
       currentBatch++;
       
+      // Progressive delay - increases with batch number to reduce rate limit issues
+      const progressiveDelay = Math.min(1000 + (currentBatch * 200), 5000);
+      if (currentBatch > 1) {
+        console.log(`Applying progressive delay: ${progressiveDelay}ms before batch ${currentBatch}`);
+        await new Promise(resolve => setTimeout(resolve, progressiveDelay));
+      }
+      
       sendEvent({
         type: 'progress',
-        message: `Processing batch ${currentBatch} of ${totalBatches}`,
+        message: `Processing batch ${currentBatch} of ${totalBatches} (delay: ${progressiveDelay}ms)`,
         totalRows,
         processedRows,
         currentBatch,
         totalBatches,
       });
 
-      // Process batch with concurrency control
-      const batchPromises = batch.map((row, rowIndex) => 
-        limit(async () => {
-          const translatedRow: string[] = [];
-          
-          // Process each column according to mapping
-          for (let colIndex = 0; colIndex < row.length; colIndex++) {
-            const columnMapping = config.columnMappings.find(
-              (mapping) => mapping.columnIndex === colIndex
-            );
-            
-            if (columnMapping && columnMapping.shouldTranslate && columnMapping.targetLanguage) {
-              try {
-                // Translate the cell content
-                const originalText = row[colIndex];
-                const translatedText = await translateText(
-                  originalText,
-                  config.sourceLanguage,
-                  columnMapping.targetLanguage
-                );
-                translatedRow.push(translatedText);
-              } catch (error) {
-                // If translation fails, keep original text
-                console.error(`Translation error for row ${i + rowIndex}, col ${colIndex}:`, error);
-                translatedRow.push(row[colIndex]);
-              }
-            } else {
-              // Keep original value if not marked for translation
-              translatedRow.push(row[colIndex]);
-            }
-          }
-          
-          return translatedRow;
-        })
-      );
+      try {
+        // Send heartbeat before processing batch
+        sendEvent({
+          type: 'progress',
+          message: `🔄 Starting batch ${currentBatch}/${totalBatches} (${batch.length} rows)...`,
+          totalRows,
+          processedRows,
+          currentBatch,
+          totalBatches,
+        });
+        
+        // Process batch with timeout and error recovery
+        const batchTimeout = 180000; // 3 minutes per batch
+        const translatedBatch = await Promise.race([
+          processBatchWithRecovery(batch, i, config, limit, sendEvent),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Batch ${currentBatch} timeout after ${batchTimeout}ms`)), batchTimeout)
+          )
+        ]) as string[][];
+        
+        translatedRows.push(...translatedBatch);
+        processedRows += batch.length;
 
-      // Wait for batch to complete
-      const translatedBatch = await Promise.all(batchPromises);
-      translatedRows.push(...translatedBatch);
-      processedRows += batch.length;
-
-      // Send progress update
+        // Send progress update
+        sendEvent({
+          type: 'progress',
+          message: `✅ Completed batch ${currentBatch} of ${totalBatches} (${batch.length} rows)`,
+          totalRows,
+          processedRows,
+          currentBatch,
+          totalBatches,
+        });
+        
+      } catch (error) {
+        console.error(`Batch ${currentBatch} failed:`, error);
+        failedBatches.push(currentBatch);
+        
+        // Add original rows as fallback for failed batch
+        translatedRows.push(...batch);
+        processedRows += batch.length;
+        
+        sendEvent({
+          type: 'progress',
+          message: `⚠️ Batch ${currentBatch} failed, using original text (${error instanceof Error ? error.message : 'Unknown error'})`,
+          totalRows,
+          processedRows,
+          currentBatch,
+          totalBatches,
+        });
+        
+        // Continue processing other batches
+        continue;
+      }
+    }
+    
+    // Report failed batches
+    if (failedBatches.length > 0) {
       sendEvent({
         type: 'progress',
-        message: `Completed batch ${currentBatch} of ${totalBatches}`,
-        totalRows,
-        processedRows,
-        currentBatch,
-        totalBatches,
+        message: `⚠️ ${failedBatches.length} batches failed: ${failedBatches.join(', ')}. Original text used for failed batches.`,
       });
     }
 
