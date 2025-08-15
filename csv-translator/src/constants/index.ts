@@ -45,7 +45,7 @@ export const CSV_CONFIG = {
   MAX_FILE_SIZE: 100 * 1024 * 1024, // 100MB - Increased for large files
   SUPPORTED_FORMATS: ['.csv', '.txt'],
   DEFAULT_BATCH_SIZE: 25, // Further reduced for stability
-  MAX_BATCH_SIZE: 100, // Reduced to prevent memory issues
+  MAX_BATCH_SIZE: 100000, // No practical limit on batch size
   MIN_BATCH_SIZE: 1,
   DEFAULT_CONCURRENCY: 1, // Serial processing for large files
   MAX_CONCURRENCY: 3, // Very conservative

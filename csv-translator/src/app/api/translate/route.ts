@@ -25,9 +25,7 @@ async function translateText(
   if (!text || text.trim() === '') return text;
   
   try {
-    // Add delay to prevent rate limiting (increased for large files)
-    await new Promise(resolve => setTimeout(resolve, 200));
-    
+    // No artificial delay here - let Azure handle rate limiting
     const result = await azureTranslator.translateText(text, toLang, fromLang);
     return result.translatedText;
   } catch (error) {
@@ -113,84 +111,74 @@ async function processBatchWithRecovery(
   batch: string[][],
   batchStartIndex: number,
   config: CSVTranslationConfig,
-  limit: any,
   sendEvent: (data: TranslationProgress) => void
 ): Promise<string[][]> {
-  const batchPromises = batch.map((row, rowIndex) => 
-    limit(async () => {
-      const rowStartTime = Date.now();
-      const actualRowIndex = batchStartIndex + rowIndex;
-      
-      try {
-        const translatedRow: string[] = [];
-        
-        // Process each column according to mapping
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          const columnMapping = config.columnMappings.find(
-            (mapping) => mapping.columnIndex === colIndex
-          );
-          
-          if (columnMapping && columnMapping.shouldTranslate && columnMapping.targetLanguage) {
-            try {
-              // Add extra logging for translation attempts
-              console.log(`Translating row ${actualRowIndex}, col ${colIndex}: "${row[colIndex].substring(0, 50)}${row[colIndex].length > 50 ? '...' : '"'}`);
-              
-              // Translate the cell content with retry logic
-              const originalText = row[colIndex];
-              if (!originalText || originalText.trim() === '') {
-                translatedRow.push(originalText);
-                continue;
-              }
-              
-              const translatedText = await translateTextWithRetry(
-                originalText,
-                config.sourceLanguage,
-                columnMapping.targetLanguage,
-                3 // max retries per cell
-              );
-              translatedRow.push(translatedText);
-              
-            } catch (error) {
-              // If translation fails, keep original text
-              console.error(`Translation error for row ${actualRowIndex}, col ${colIndex}:`, error);
-              translatedRow.push(row[colIndex]);
-            }
-          } else {
-            // Keep original value if not marked for translation
-            translatedRow.push(row[colIndex]);
-          }
-        }
-        
-        const rowTime = Date.now() - rowStartTime;
-        if (rowTime > 5000) { // Log slow rows
-          console.log(`Row ${actualRowIndex} took ${rowTime}ms to process`);
-        }
-        
-        return translatedRow;
-        
-      } catch (error) {
-        console.error(`Error processing row ${actualRowIndex}:`, error);
-        // Return original row on error
-        return row;
-      }
-    })
-  );
-
-  // Wait for batch to complete with detailed error reporting
-  const translatedBatch = await Promise.allSettled(batchPromises);
-  
-  // Process results and handle failures
   const results: string[][] = [];
   let failedRows = 0;
   
-  for (let i = 0; i < translatedBatch.length; i++) {
-    const result = translatedBatch[i];
-    if (result.status === 'fulfilled') {
-      results.push(result.value);
-    } else {
-      console.error(`Row ${batchStartIndex + i} failed:`, result.reason);
-      results.push(batch[i]); // Use original row
+  // Process rows sequentially to avoid issues
+  for (let rowIndex = 0; rowIndex < batch.length; rowIndex++) {
+    const row = batch[rowIndex];
+    const actualRowIndex = batchStartIndex + rowIndex;
+    const rowStartTime = Date.now();
+    
+    try {
+      const translatedRow: string[] = [];
+      
+      // Process each column according to mapping
+      for (let colIndex = 0; colIndex < row.length; colIndex++) {
+        const columnMapping = config.columnMappings.find(
+          (mapping) => mapping.columnIndex === colIndex
+        );
+        
+        if (columnMapping && columnMapping.shouldTranslate && columnMapping.targetLanguage) {
+          try {
+            // Translate the cell content with retry logic
+            const originalText = row[colIndex];
+            if (!originalText || originalText.trim() === '') {
+              translatedRow.push(originalText);
+              continue;
+            }
+            
+            const translatedText = await translateTextWithRetry(
+              originalText,
+              config.sourceLanguage,
+              columnMapping.targetLanguage,
+              2 // max retries per cell - reduced for speed
+            );
+            translatedRow.push(translatedText);
+            
+          } catch (error) {
+            // If translation fails, keep original text
+            console.error(`Translation error for row ${actualRowIndex}, col ${colIndex}:`, error);
+            translatedRow.push(row[colIndex]);
+          }
+        } else {
+          // Keep original value if not marked for translation
+          translatedRow.push(row[colIndex]);
+        }
+      }
+      
+      const rowTime = Date.now() - rowStartTime;
+      if (rowTime > 5000) { // Log slow rows
+        console.log(`Row ${actualRowIndex} took ${rowTime}ms to process`);
+      }
+      
+      results.push(translatedRow);
+      
+    } catch (error) {
+      console.error(`Error processing row ${actualRowIndex}:`, error);
+      // Return original row on error
+      results.push(row);
       failedRows++;
+    }
+    
+    // Send progress update every 10 rows within batch
+    if ((rowIndex + 1) % 10 === 0) {
+      sendEvent({
+        type: 'progress',
+        message: `Processing row ${actualRowIndex + 1}...`,
+      });
     }
   }
   
@@ -209,25 +197,25 @@ async function translateTextWithRetry(
   text: string,
   fromLang: string,
   toLang: string,
-  maxRetries: number = 3
+  maxRetries: number = 2
 ): Promise<string> {
   if (!text || text.trim() === '') return text;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Progressive delay based on attempt number
-      const delay = 200 + (attempt - 1) * 300;
-      await new Promise(resolve => setTimeout(resolve, delay));
+      // Minimal delay to speed up processing
+      if (attempt > 1) {
+        const delay = 500 * attempt; // 500ms, 1000ms
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
       
       const result = await azureTranslator.translateText(text, toLang, fromLang);
       return result.translatedText;
       
     } catch (error) {
-      console.error(`Translation attempt ${attempt}/${maxRetries} failed:`, error);
-      
       if (attempt === maxRetries) {
         // Final attempt failed, return original text
-        console.error(`All translation attempts failed for text: "${text.substring(0, 100)}${text.length > 100 ? '...' : '"'}`);
+        console.error(`Translation failed after ${maxRetries} attempts`);
         return text;
       }
       
@@ -236,8 +224,8 @@ async function translateTextWithRetry(
         (error.message.includes('Rate limit') || error.message.includes('429'));
       
       if (isRateLimit) {
-        const rateLimitDelay = attempt * 2000; // 2s, 4s, 6s...
-        console.log(`Rate limit detected, waiting ${rateLimitDelay}ms before retry ${attempt + 1}`);
+        const rateLimitDelay = 3000; // Fixed 3s delay for rate limits
+        console.log(`Rate limit detected, waiting ${rateLimitDelay}ms before retry`);
         await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
       }
     }
@@ -329,20 +317,10 @@ async function processTranslationRequest(
       processedRows: 0,
     });
 
-    // Set up batch processing
-    const batchSize = Math.min(
-      Math.max(config.batchSize || CSV_CONFIG.DEFAULT_BATCH_SIZE, CSV_CONFIG.MIN_BATCH_SIZE),
-      CSV_CONFIG.MAX_BATCH_SIZE
-    );
+    // Set up batch processing - use the provided batch size directly
+    const batchSize = config.batchSize || CSV_CONFIG.DEFAULT_BATCH_SIZE;
     
     const totalBatches = Math.ceil(totalRows / batchSize);
-    const concurrencyLimit = Math.min(
-      TRANSLATION_LIMITS.MAX_CONCURRENT_REQUESTS,
-      CSV_CONFIG.DEFAULT_CONCURRENCY
-    );
-
-    // Create concurrency limiter
-    const limit = pLimit(concurrencyLimit);
     let processedRows = 0;
     let currentBatch = 0;
 
@@ -354,16 +332,15 @@ async function processTranslationRequest(
       const batch = csvRows.slice(i, i + batchSize);
       currentBatch++;
       
-      // Progressive delay - increases with batch number to reduce rate limit issues
-      const progressiveDelay = Math.min(1000 + (currentBatch * 200), 5000);
+      // Small delay between batches to avoid rate limiting
       if (currentBatch > 1) {
-        console.log(`Applying progressive delay: ${progressiveDelay}ms before batch ${currentBatch}`);
-        await new Promise(resolve => setTimeout(resolve, progressiveDelay));
+        const delay = 1000; // Fixed 1 second delay between batches
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
       
       sendEvent({
         type: 'progress',
-        message: `Processing batch ${currentBatch} of ${totalBatches} (delay: ${progressiveDelay}ms)`,
+        message: `Processing batch ${currentBatch} of ${totalBatches}`,
         totalRows,
         processedRows,
         currentBatch,
@@ -381,14 +358,8 @@ async function processTranslationRequest(
           totalBatches,
         });
         
-        // Process batch with timeout and error recovery
-        const batchTimeout = 180000; // 3 minutes per batch
-        const translatedBatch = await Promise.race([
-          processBatchWithRecovery(batch, i, config, limit, sendEvent),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error(`Batch ${currentBatch} timeout after ${batchTimeout}ms`)), batchTimeout)
-          )
-        ]) as string[][];
+        // Process batch without timeout to avoid interrupting valid processing
+        const translatedBatch = await processBatchWithRecovery(batch, i, config, sendEvent);
         
         translatedRows.push(...translatedBatch);
         processedRows += batch.length;

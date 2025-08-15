@@ -27,7 +27,7 @@ const translationFormSchema = z.object({
   sourceLanguage: z.string().min(1, "Select source language"),
   targetLanguage: z.string().min(1, "Select target language"),
   batchSize: z
-    .preprocess((v) => Number(v), z.number().min(1).max(CSV_CONFIG.MAX_BATCH_SIZE))
+    .preprocess((v) => Number(v), z.number().min(1))
     .default(CSV_CONFIG.DEFAULT_BATCH_SIZE),
 })
 
@@ -324,13 +324,12 @@ try {
               <input
                 type="number"
                 min={1}
-                max={CSV_CONFIG.MAX_BATCH_SIZE}
                 className="border rounded-md px-3 py-2 w-full"
                 disabled={isTranslating}
                 {...register("batchSize")}
               />
               <p className="text-xs text-muted-foreground">
-                Smaller batches = better progress tracking, less network errors
+                Number of rows to process per batch (no limit)
               </p>
               {errors.batchSize && <p className="text-xs text-destructive">{errors.batchSize.message}</p>}
             </div>
